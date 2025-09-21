@@ -3,6 +3,7 @@ import os
 import pandas as pd
 from functools import lru_cache
 import re
+from pathlib import Path
 
 
 # ===== Canonicalization Helpers =====
@@ -18,30 +19,41 @@ def _canon_soc(x: str):
 
 
 # ===== File Locations / Config =====
-# Default filenames (OEWS 2024 downloads). Place these files alongside the app, or update the paths below.
+# Default filenames (OEWS 2024 downloads)
+DATA_DIR = Path(__file__).parent / "data"  
+
 DEFAULT_FILES = {
-    "national": "/Users/owner/Downloads/labor_dashboard/data/national_M2024_dl.xlsx",
-    "state": "/Users/owner/Downloads/labor_dashboard/data/state_M2024_dl.xlsx",
-    "msa": "/Users/owner/Downloads/labor_dashboard/data/MSA_M2024_dl.xlsx",
-    "natsector": "/Users/owner/Downloads/labor_dashboard/data/natsector_M2024_dl.xlsx",
+    "national": DATA_DIR / "national_M2024_dl.xlsx",
+    "state":    DATA_DIR / "state_M2024_dl.xlsx",
+    "msa":      DATA_DIR / "MSA_M2024_dl.xlsx",
+    "natsector":DATA_DIR / "natsector_M2024_dl.xlsx",
 }
 
-# Optional fallback directory (used in this hosted demo environment)
+# Optional fallback directory 
 FALLBACK_DIR = "/mnt/data"
 
 
 # ===== Path Resolution =====
 # Resolve file path with fallback
-def _resolve_path(fname: str):
-    here = os.path.abspath(os.getcwd())
-    p1 = os.path.join(here, fname)
-    if os.path.exists(p1):
-        return p1
+FALLBACK_DIR = Path("/mnt/data")  # keep if you want the fallback
+
+def _resolve_path(p) -> str:
+    p = Path(p)                          # accept Path or str
+    if p.is_absolute():
+        return str(p) if p.exists() else str(p)  # absolute -> just return (or fail later)
+
+    here = Path.cwd()
+    p1 = here / p
+    if p1.exists():
+        return str(p1)
+
     if FALLBACK_DIR:
-        p2 = os.path.join(FALLBACK_DIR, fname)
-        if os.path.exists(p2):
-            return p2
-    return p1  
+        p2 = FALLBACK_DIR / p.name
+        if p2.exists():
+            return str(p2)
+
+    return str(p1)   # non-existent; caller will error if missing
+
 
 
 # ===== Table Loading & Normalization =====
