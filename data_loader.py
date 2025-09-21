@@ -4,6 +4,8 @@ import pandas as pd
 from functools import lru_cache
 import re
 from pathlib import Path
+import os, tempfile, requests
+import streamlit as st
 
 
 # ===== Canonicalization Helpers =====
@@ -18,9 +20,18 @@ def _canon_soc(x: str):
     return s
 
 
-# ===== File Locations / Config =====
-# Default filenames (OEWS 2024 downloads)
-DATA_DIR = Path(__file__).parent / "data"  
+# ===== Cloud config (Streamlit) =====
+DATA_DIR = Path(__file__).parent / "data"   # Excel if you commit them
+SAMPLE_DIR = Path(__file__).parent / "sample_data"  # tiny CSVs for demo mode
+
+# Toggle demo mode via Streamlit Cloud → App settings → Environment variables
+DEMO_MODE = os.environ.get("DEMO_MODE", "").lower() in {"1", "true", "yes"}
+
+# Optional remote URLs (set as env vars in Streamlit Cloud if you can't commit Excel)
+OEWS_URL_NATIONAL = os.environ.get("OEWS_URL_NATIONAL", "")
+OEWS_URL_STATE    = os.environ.get("OEWS_URL_STATE", "")
+OEWS_URL_MSA      = os.environ.get("OEWS_URL_MSA", "")
+OEWS_URL_NATSECT  = os.environ.get("OEWS_URL_NATSECT", "")
 
 DEFAULT_FILES = {
     "national": DATA_DIR / "national_M2024_dl.xlsx",
@@ -28,82 +39,179 @@ DEFAULT_FILES = {
     "msa":      DATA_DIR / "MSA_M2024_dl.xlsx",
     "natsector":DATA_DIR / "natsector_M2024_dl.xlsx",
 }
-
-# Optional fallback directory 
-FALLBACK_DIR = "/mnt/data"
+SAMPLE_FILES = {
+    "national": SAMPLE_DIR / "national.csv",
+    "state":    SAMPLE_DIR / "state.csv",
+    "msa":      SAMPLE_DIR / "msa.csv",
+    "natsector":SAMPLE_DIR / "natsector.csv",
+}
+REMOTE_URLS = {
+    "national": OEWS_URL_NATIONAL,
+    "state":    OEWS_URL_STATE,
+    "msa":      OEWS_URL_MSA,
+    "natsector":OEWS_URL_NATSECT,
+}
 
 
 # ===== Path Resolution =====
 # Resolve file path with fallback
 FALLBACK_DIR = Path("/mnt/data")  # keep if you want the fallback
 
-def _resolve_path(p) -> str:
-    p = Path(p)                          # accept Path or str
+def _resolve_path(p):
+    p = Path(p)
     if p.is_absolute():
-        return str(p) if p.exists() else str(p)  # absolute -> just return (or fail later)
+        return str(p)
+    return str((Path.cwd() / p).resolve())
 
-    here = Path.cwd()
-    p1 = here / p
-    if p1.exists():
-        return str(p1)
+def _fetch_remote(url: str, ext_hint: str):
+    if not url:
+        return ""
+    try:
+        import requests, tempfile
+        r = requests.get(url, timeout=30)
+        r.raise_for_status()
+        suffix = ".xlsx" if "xlsx" in ext_hint.lower() else ".csv"
+        fd, path = tempfile.mkstemp(prefix="oews_", suffix=suffix)
+        os.close(fd)
+        with open(path, "wb") as f:
+            f.write(r.content)
+        return path
+    except Exception:
+        return ""
 
-    if FALLBACK_DIR:
-        p2 = FALLBACK_DIR / p.name
-        if p2.exists():
-            return str(p2)
 
-    return str(p1)   # non-existent; caller will error if missing
-
-
-
-# ===== Table Loading & Normalization =====
-# Load a formatted table with caching
 @lru_cache(maxsize=8)
 def load_table(kind: str):
     if kind not in DEFAULT_FILES:
         raise ValueError(f"Unknown table kind: {kind}")
-    path = _resolve_path(DEFAULT_FILES[kind])
-    df = pd.read_excel(path, engine="openpyxl")
 
-    # Make sure codes are strings (prevents 15-1212 becoming 151212 etc.)
-    for c in ["OCC_CODE", "AREA", "AREA_TITLE", "O_GROUP", "NAICS_TITLE"]:
-        if c in df.columns:
-            df[c] = df[c].astype(str).str.strip()
 
-    # Add a numeric mirror for AREA_TYPE (OEWS: 2=state, 4=MSA)
-    if "AREA_TYPE" in df.columns:
-        df["AREA_TYPE_NUM"] = pd.to_numeric(df["AREA_TYPE"], errors="coerce")
+    DEMO_MODE = os.environ.get("DEMO_MODE", "").lower() in {"1", "true", "yes"}
+    url_map = {
+        "national": os.environ.get("OEWS_URL_NATIONAL", ""),
+        "state":    os.environ.get("OEWS_URL_STATE", ""),
+        "msa":      os.environ.get("OEWS_URL_MSA", ""),
+        "natsector":os.environ.get("OEWS_URL_NATSECT", ""),
+    }
+    sample_csv = (Path(__file__).parent / "sample_data" / f"{kind}.csv").resolve()
 
-    # Numeric coercions (some values are '**', '#', '—' etc.)
-    numeric_cols = [
-        "TOT_EMP", "EMP_PRSE", "JOBS_1000",
-        "LOC_QUOTIENT", "LOC_Q",  
-        "PCT_TOTAL", "PCT_RPT",
-        "H_MEAN", "A_MEAN", "MEAN_PRSE",
-        "H_PCT10", "H_PCT25", "H_MEDIAN", "H_PCT75", "H_PCT90",
-        "A_PCT10", "A_PCT25", "A_MEDIAN", "A_PCT75", "A_PCT90"
-    ]
-    
-    # Coerce numeric columns
-    for c in numeric_cols:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce")
+    excel_path = Path(_resolve_path(DEFAULT_FILES[kind]))
+    if excel_path.exists():
+        try:
+            df = pd.read_excel(str(excel_path), engine="openpyxl")
+        except Exception:
+            df = None
+        else:
+            for c in ["OCC_CODE", "AREA", "AREA_TITLE", "O_GROUP", "NAICS_TITLE"]:
+                if c in df.columns:
+                    df[c] = df[c].astype(str).str.strip()
+            if "AREA_TYPE" in df.columns:
+                df["AREA_TYPE_NUM"] = pd.to_numeric(df["AREA_TYPE"], errors="coerce")
+            numeric_cols = [
+                "TOT_EMP","EMP_PRSE","JOBS_1000",
+                "LOC_QUOTIENT","LOC_Q",
+                "PCT_TOTAL","PCT_RPT",
+                "H_MEAN","A_MEAN","MEAN_PRSE",
+                "H_PCT10","H_PCT25","H_MEDIAN","H_PCT75","H_PCT90",
+                "A_PCT10","A_PCT25","A_MEDIAN","A_PCT75","A_PCT90",
+            ]
+            for c in numeric_cols:
+                if c in df.columns:
+                    df[c] = pd.to_numeric(df[c], errors="coerce")
+ 
+            if "LOC_Q" in df.columns and "LOC_QUOTIENT" not in df.columns:
+                df["LOC_QUOTIENT"] = df["LOC_Q"]
 
-    # Create an alias for LOC_Q
-    if "LOC_Q" in df.columns and "LOC_QUOTIENT" not in df.columns:
-        df["LOC_QUOTIENT"] = df["LOC_Q"]
+            if "OCC_CODE" in df.columns:
+                df["SOC_CANON"] = df["OCC_CODE"].apply(_canon_soc)
 
-    # Canonicalized keys for robust filters/joins
-    if "OCC_CODE" in df.columns:
-        df["SOC_CANON"] = df["OCC_CODE"].apply(_canon_soc)
+            if "A_MEDIAN" in df.columns:
+                df["A_MEDIAN_ANNUAL"] = df["A_MEDIAN"].copy()
+                if "H_MEDIAN" in df.columns:
+                    needs_fill = df["A_MEDIAN_ANNUAL"].isna() & df["H_MEDIAN"].notna()
+                    df.loc[needs_fill, "A_MEDIAN_ANNUAL"] = df.loc[needs_fill, "H_MEDIAN"] * 2080.0
+            return df
 
-    # Annual median fallback from hourly median (covers occupations with missing A_MEDIAN)
-    if "A_MEDIAN" in df.columns:
-        df["A_MEDIAN_ANNUAL"] = df["A_MEDIAN"].copy()
-        if "H_MEDIAN" in df.columns:
-            needs_fill = df["A_MEDIAN_ANNUAL"].isna() & df["H_MEDIAN"].notna()
-            df.loc[needs_fill, "A_MEDIAN_ANNUAL"] = df.loc[needs_fill, "H_MEDIAN"] * 2080.0
-    return df
+
+    url = url_map.get(kind, "")
+    if url:
+        try:
+            r = requests.get(url, timeout=30)
+            r.raise_for_status()
+            suffix = ".xlsx" if url.lower().endswith(".xlsx") else ".csv"
+            fd, tmp = tempfile.mkstemp(prefix="oews_", suffix=suffix)
+            os.close(fd)
+            with open(tmp, "wb") as f:
+                f.write(r.content)
+            if tmp.lower().endswith(".xlsx"):
+                df = pd.read_excel(tmp, engine="openpyxl")
+            else:
+                df = pd.read_csv(tmp)
+        except Exception:
+            df = None
+        if df is not None:
+
+            for c in ["OCC_CODE", "AREA", "AREA_TITLE", "O_GROUP", "NAICS_TITLE"]:
+                if c in df.columns:
+                    df[c] = df[c].astype(str).str.strip()
+            if "AREA_TYPE" in df.columns:
+                df["AREA_TYPE_NUM"] = pd.to_numeric(df["AREA_TYPE"], errors="coerce")
+            numeric_cols = [
+                "TOT_EMP","EMP_PRSE","JOBS_1000",
+                "LOC_QUOTIENT","LOC_Q",
+                "PCT_TOTAL","PCT_RPT",
+                "H_MEAN","A_MEAN","MEAN_PRSE",
+                "H_PCT10","H_PCT25","H_MEDIAN","H_PCT75","H_PCT90",
+                "A_PCT10","A_PCT25","A_MEDIAN","A_PCT75","A_PCT90",
+            ]
+            for c in numeric_cols:
+                if c in df.columns:
+                    df[c] = pd.to_numeric(df[c], errors="coerce")
+            if "LOC_Q" in df.columns and "LOC_QUOTIENT" not in df.columns:
+                df["LOC_QUOTIENT"] = df["LOC_Q"]
+            if "OCC_CODE" in df.columns:
+                df["SOC_CANON"] = df["OCC_CODE"].apply(_canon_soc)
+            if "A_MEDIAN" in df.columns:
+                df["A_MEDIAN_ANNUAL"] = df["A_MEDIAN"].copy()
+                if "H_MEDIAN" in df.columns:
+                    needs_fill = df["A_MEDIAN_ANNUAL"].isna() & df["H_MEDIAN"].notna()
+                    df.loc[needs_fill, "A_MEDIAN_ANNUAL"] = df.loc[needs_fill, "H_MEDIAN"] * 2080.0
+            return df
+
+
+    if DEMO_MODE and sample_csv.exists():
+        df = pd.read_csv(sample_csv)
+
+        for c in ["OCC_CODE", "AREA", "AREA_TITLE", "O_GROUP", "NAICS_TITLE"]:
+            if c in df.columns:
+                df[c] = df[c].astype(str).str.strip()
+        if "AREA_TYPE" in df.columns:
+            df["AREA_TYPE_NUM"] = pd.to_numeric(df["AREA_TYPE"], errors="coerce")
+        numeric_cols = [
+            "TOT_EMP","EMP_PRSE","JOBS_1000",
+            "LOC_QUOTIENT","LOC_Q",
+            "PCT_TOTAL","PCT_RPT",
+            "H_MEAN","A_MEAN","MEAN_PRSE",
+            "H_PCT10","H_PCT25","H_MEDIAN","H_PCT75","H_PCT90",
+            "A_PCT10","A_PCT25","A_MEDIAN","A_PCT75","A_PCT90",
+        ]
+        for c in numeric_cols:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
+        if "LOC_Q" in df.columns and "LOC_QUOTIENT" not in df.columns:
+            df["LOC_QUOTIENT"] = df["LOC_Q"]
+        if "OCC_CODE" in df.columns:
+            df["SOC_CANON"] = df["OCC_CODE"].apply(_canon_soc)
+        if "A_MEDIAN" in df.columns and "A_MEDIAN_ANNUAL" not in df.columns:
+            df["A_MEDIAN_ANNUAL"] = df["A_MEDIAN"]
+        return df
+
+    st.error(
+        f"Missing OEWS source for '{kind}'. "
+        "Commit Excel to `data/`, or set OEWS_URL_* env vars, "
+        "or enable DEMO_MODE=true and commit `sample_data/*.csv`."
+    )
+    st.stop()
 
 
 # ===== National Aggregates =====
