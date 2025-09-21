@@ -21,13 +21,14 @@ def _canon_soc(x: str):
 
 
 # ===== Cloud config (Streamlit) =====
-DATA_DIR = Path(__file__).parent / "data"   # Excel if you commit them
-SAMPLE_DIR = Path(__file__).parent / "sample_data"  # tiny CSVs for demo mode
+# Directories
+DATA_DIR = Path(__file__).parent / "data"
+SAMPLE_DIR = Path(__file__).parent / "sample_data"
 
-# Toggle demo mode via Streamlit Cloud → App settings → Environment variables
+# Toggle demo mode via Streamlit Cloud
 DEMO_MODE = os.environ.get("DEMO_MODE", "").lower() in {"1", "true", "yes"}
 
-# Optional remote URLs (set as env vars in Streamlit Cloud if you can't commit Excel)
+# Remote URLs
 OEWS_URL_NATIONAL = os.environ.get("OEWS_URL_NATIONAL", "")
 OEWS_URL_STATE    = os.environ.get("OEWS_URL_STATE", "")
 OEWS_URL_MSA      = os.environ.get("OEWS_URL_MSA", "")
@@ -79,13 +80,14 @@ def _fetch_remote(url: str, ext_hint: str):
     except Exception:
         return ""
 
-
+# ===== Load OEWS Table =====
+# Load and cache a specific OEWS table (national, state, msa, natsector)
 @lru_cache(maxsize=8)
 def load_table(kind: str):
     if kind not in DEFAULT_FILES:
         raise ValueError(f"Unknown table kind: {kind}")
 
-
+    # Try local file first
     DEMO_MODE = os.environ.get("DEMO_MODE", "").lower() in {"1", "true", "yes"}
     url_map = {
         "national": os.environ.get("OEWS_URL_NATIONAL", ""),
@@ -95,6 +97,7 @@ def load_table(kind: str):
     }
     sample_csv = (Path(__file__).parent / "sample_data" / f"{kind}.csv").resolve()
 
+    # Try remote URL if set
     excel_path = Path(_resolve_path(DEFAULT_FILES[kind]))
     if excel_path.exists():
         try:
@@ -132,7 +135,7 @@ def load_table(kind: str):
                     df.loc[needs_fill, "A_MEDIAN_ANNUAL"] = df.loc[needs_fill, "H_MEDIAN"] * 2080.0
             return df
 
-
+    # Try remote URL if set
     url = url_map.get(kind, "")
     if url:
         try:
@@ -178,7 +181,7 @@ def load_table(kind: str):
                     df.loc[needs_fill, "A_MEDIAN_ANNUAL"] = df.loc[needs_fill, "H_MEDIAN"] * 2080.0
             return df
 
-
+    # Try sample CSV if in demo mode
     if DEMO_MODE and sample_csv.exists():
         df = pd.read_csv(sample_csv)
 
@@ -206,6 +209,7 @@ def load_table(kind: str):
             df["A_MEDIAN_ANNUAL"] = df["A_MEDIAN"]
         return df
 
+    # If all else fails, show error and stop
     st.error(
         f"Missing OEWS source for '{kind}'. "
         "Commit Excel to `data/`, or set OEWS_URL_* env vars, "
