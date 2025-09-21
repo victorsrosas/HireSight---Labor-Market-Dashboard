@@ -1,17 +1,31 @@
-# Labor Market Dashboard — Dynamic Data Wiring (Starter)
+# 📊 HireSight — Labor Market Dashboard
 
-This app wires **real** data sources for your "Glassdoor × SocialBlade" dashboard:
-- Indeed Job Postings Index (sector, US)
-- Indeed Posted Wage Tracker (sector, US)
-- JOLTS (hires, layoffs/discharges, separations by industry) via FRED CSV
-- OEWS (median compensation by occupation, national)
-- Industry–Occupation Matrix (popular industries per SOC)
+---
 
-## Quickstart
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-streamlit run app.py
-```
+Explore U.S. jobs with real BLS data.  
+HireSight shows wages, employment size, geography, and industry mix for every occupation.  
+Built with **Streamlit, pandas, and Plotly**.
 
-If a source is temporarily unavailable, the app falls back gracefully.
+---
+
+## Features
+
+- Browse jobs by **Most Popular** or **A→Z list**  
+- **Snapshot**: median wage, wage range (P10–P90), mean wage, employment size  
+- **Compensation Distribution**: interactive wage percentiles chart  
+- **Top States / Metros**: highest-paying geographies  
+- **Employment Concentration (LQ)**: where jobs are most concentrated  
+- **Industry Mix**: which industries employ the occupation  
+
+---
+
+## 🚀 Live App
+
+👉 [Launch HireSight on Streamlit](https://your-streamlit-link-here)
+
+---
+
+## 📸 Screenshots
+
+*(add images here)*  
+Example:
