@@ -21,11 +21,24 @@ Built with **Streamlit, pandas, and Plotly**.
 
 ## 🚀 Live App
 
-👉 [Launch HireSight on Streamlit](https://your-streamlit-link-here)
+👉 [Launch HireSight on Streamlit](https://hiresight---labor-market-dashboard-hahkxkhdrzmhzxzrztzm7b.streamlit.app/)
 
 ---
 
 ## 📸 Screenshots
 
-*(add images here)*  
-Example:
+### Snapshot Overview
+Visual summary of an occupation’s median wage, wage range (P10–P90), employment size, and comparison to the U.S. median.  
+![HireSight Snapshot](screenshots/1.hiresight_snapshot.png)
+
+### Top States & Metros
+Highest-paying states and metro areas for the selected occupation, shown with sortable tables and bar charts.  
+![Top States & Metros](screenshots/2.hiresight_top_states_metros.png)
+
+### Employment Concentration
+Location quotient analysis showing where an occupation is most concentrated relative to the national average.  
+![Employment Concentration](screenshots/3.hiresight_employment_concentration.png)
+
+### Industry Mix
+Breakdown of employment share by industry sector, highlighting which sectors employ the largest share of workers in the occupation.  
+![Industry Mix](screenshots/4.hiresight_industry_mix.png)
