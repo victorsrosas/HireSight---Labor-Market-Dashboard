@@ -1,0 +1,7 @@
+[theme]
+base = "light"
+primaryColor = "#0891B2"            # cyan-600
+backgroundColor = "#F6FAFF"         # cool, airy slate-blue
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0B1220"
+font = "Inter"
